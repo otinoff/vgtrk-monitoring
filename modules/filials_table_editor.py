@@ -109,6 +109,48 @@ class FilialsTableEditor:
             st.error(f"Ошибка обновления поля {field}: {e}")
             return False
     
+    def delete_filial(self, filial_id: int) -> bool:
+        """Удаление филиала из базы данных"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Сначала удаляем связанные записи из дополнительных таблиц
+            cursor.execute("DELETE FROM filial_additional_domains WHERE filial_id = ?", (filial_id,))
+            cursor.execute("DELETE FROM monitoring_results WHERE filial_id = ?", (filial_id,))
+            
+            # Затем удаляем сам филиал
+            cursor.execute("DELETE FROM filials WHERE id = ?", (filial_id,))
+            
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            st.error(f"Ошибка удаления филиала: {e}")
+            return False
+    
+    def add_filial(self, name: str, federal_district: str, region: str,
+                  website: str = "", sitemap_url: str = "") -> bool:
+        """Добавление нового филиала"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                INSERT INTO filials (name, federal_district, region, website, sitemap_url, is_active, region_code)
+                VALUES (?, ?, ?, ?, ?, 1, ?)
+            """, (name, federal_district, region,
+                  website if website else None,
+                  sitemap_url if sitemap_url else None,
+                  region[:3].upper()))  # Простой код региона из первых букв
+            
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as e:
+            st.error(f"Ошибка добавления филиала: {e}")
+            return False
+    
     def format_website_url(self, url: Optional[str]) -> str:
         """Форматирование URL сайта для отображения"""
         if not url:
@@ -123,23 +165,6 @@ class FilialsTableEditor:
         """Отображение профессиональной таблицы AgGrid с inline-редактированием"""
         
         st.markdown("### 📊 Управление филиалами ВГТРК")
-        st.info("""
-        💡 **Возможности таблицы:**
-        - **☑️ Выбор филиалов** - используйте чекбоксы слева для выбора филиалов для мониторинга
-        - **✏️ Редактирование всех полей** - двойной клик по любой ячейке (кроме ID)
-        - **📝 Редактируемые поля:**
-          - **Название** - название филиала
-          - **Округ** - выбор из списка федеральных округов
-          - **Регион** - регион расположения
-          - **Сайт** - URL сайта филиала (кликабельный)
-          - **Sitemap URL** - путь к sitemap
-        - **🔍 Фильтры** в каждой колонке (наведите на заголовок → меню)
-        - **📊 Сортировка** по клику на заголовок колонки
-        - **↔️ Изменение размера** колонок перетаскиванием границ
-        - **💾 Автосохранение** - все изменения сохраняются автоматически
-        
-        ⚡ **Для мониторинга:** выберите нужные филиалы чекбоксами и перейдите на вкладку "🔍 Мониторинг"
-        """)
         
         # Фильтры
         col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
@@ -187,25 +212,6 @@ class FilialsTableEditor:
         df['Sitemap'] = df['sitemap_url'].apply(
             lambda x: '✅' if x and str(x).strip() else '❌'
         )
-        
-        # Статистика
-        st.markdown("### 📈 Статистика")
-        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
-        
-        with col_stat1:
-            st.metric("Всего филиалов", len(df))
-        
-        with col_stat2:
-            active_count = len(df[df['is_active'] == 1])
-            st.metric("Активных", active_count)
-        
-        with col_stat3:
-            with_sitemap = len(df[df['Sitemap'] == '✅'])
-            st.metric("С Sitemap", with_sitemap)
-        
-        with col_stat4:
-            coverage = (with_sitemap / len(df) * 100) if len(df) > 0 else 0
-            st.metric("% покрытия", f"{coverage:.1f}%")
         
         # Подготовка данных для AgGrid
         st.markdown("### 📋 Таблица филиалов")
@@ -430,12 +436,83 @@ class FilialsTableEditor:
         # Показываем кнопку перехода к мониторингу если есть выбранные филиалы
         if st.session_state.get('selected_filials'):
             st.markdown("---")
-            col_monitor1, col_monitor2 = st.columns([3, 1])
+            col_monitor1, col_monitor2, col_monitor3 = st.columns([2, 1, 1])
             with col_monitor1:
                 st.info(f"🎯 Выбрано {len(st.session_state.selected_filials)} филиалов. Готовы к мониторингу!")
             with col_monitor2:
                 if st.button("🚀 Перейти к мониторингу", use_container_width=True, type="primary"):
                     st.info("Перейдите на вкладку '🔍 Мониторинг' для запуска")
+            with col_monitor3:
+                # Массовое удаление выбранных филиалов
+                if st.button("🗑️ Удалить выбранные", use_container_width=True, type="secondary",
+                           help="Удалить все выбранные филиалы"):
+                    selected_ids = [filial['id'] for filial in st.session_state.selected_filials]
+                    selected_names = [filial['name'] for filial in st.session_state.selected_filials]
+                    
+                    # Показываем диалог подтверждения
+                    st.session_state.show_delete_confirmation = True
+                    st.session_state.filials_to_delete = selected_ids
+                    st.session_state.filials_names_to_delete = selected_names
+        
+        # Диалог подтверждения массового удаления
+        if st.session_state.get('show_delete_confirmation', False):
+            st.error("⚠️ **ВНИМАНИЕ!** Вы собираетесь удалить следующие филиалы:")
+            for name in st.session_state.filials_names_to_delete:
+                st.write(f"• {name}")
+            
+            col_confirm1, col_confirm2, col_confirm3 = st.columns(3)
+            
+            with col_confirm1:
+                if st.button("✅ ДА, УДАЛИТЬ", use_container_width=True, type="secondary"):
+                    # Выполняем удаление
+                    deleted_count = 0
+                    for filial_id in st.session_state.filials_to_delete:
+                        if self.delete_filial(filial_id):
+                            deleted_count += 1
+                    
+                    st.success(f"✅ Удалено {deleted_count} филиалов")
+                    
+                    # Очищаем состояние
+                    st.session_state.show_delete_confirmation = False
+                    st.session_state.selected_filials = []
+                    if 'filials_to_delete' in st.session_state:
+                        del st.session_state.filials_to_delete
+                    if 'filials_names_to_delete' in st.session_state:
+                        del st.session_state.filials_names_to_delete
+                    
+                    st.rerun()
+            
+            with col_confirm2:
+                if st.button("❌ ОТМЕНА", use_container_width=True, type="primary"):
+                    # Отменяем удаление
+                    st.session_state.show_delete_confirmation = False
+                    if 'filials_to_delete' in st.session_state:
+                        del st.session_state.filials_to_delete
+                    if 'filials_names_to_delete' in st.session_state:
+                        del st.session_state.filials_names_to_delete
+                    st.rerun()
+            
+            with col_confirm3:
+                st.write("")  # Пустая колонка для выравнивания
+        
+        # Статистика - перенесена вниз
+        st.markdown("### 📈 Статистика")
+        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+        
+        with col_stat1:
+            st.metric("Всего филиалов", len(df))
+        
+        with col_stat2:
+            active_count = len(df[df['is_active'] == 1])
+            st.metric("Активных", active_count)
+        
+        with col_stat3:
+            with_sitemap = len(df[df['Sitemap'] == '✅'])
+            st.metric("С Sitemap", with_sitemap)
+        
+        with col_stat4:
+            coverage = (with_sitemap / len(df) * 100) if len(df) > 0 else 0
+            st.metric("% покрытия", f"{coverage:.1f}%")
         
         # Кнопки действий
         st.markdown("### 🛠️ Действия")
@@ -471,3 +548,94 @@ class FilialsTableEditor:
             selected_theme = st.selectbox("🎨 Тема", theme_options, key="theme_selector")
             if selected_theme != 'streamlit':
                 st.info(f"Тема изменится при следующем обновлении таблицы")
+        
+        # Второй ряд - управление филиалами
+        st.markdown("#### ➕➖ Управление филиалами")
+        col_manage1, col_manage2 = st.columns(2)
+        
+        with col_manage1:
+            # Добавление филиала
+            with st.expander("➕ Добавить филиал", expanded=False):
+                with st.form("add_filial_form"):
+                    new_name = st.text_input("Название филиала*", placeholder="ГТРК \"Название\"")
+                    
+                    districts = ['ЦФО', 'СЗФО', 'ЮФО', 'СКФО', 'ПФО', 'УФО', 'СФО', 'ДФО']
+                    new_district = st.selectbox("Федеральный округ*", districts)
+                    
+                    new_region = st.text_input("Регион*", placeholder="Название региона")
+                    new_website = st.text_input("Сайт", placeholder="example.ru (без http://)")
+                    new_sitemap = st.text_input("Sitemap URL", placeholder="/sitemap.xml")
+                    
+                    submitted = st.form_submit_button("➕ Добавить филиал", use_container_width=True)
+                    
+                    if submitted:
+                        if new_name and new_district and new_region:
+                            if self.add_filial(new_name, new_district, new_region, new_website, new_sitemap):
+                                st.success(f"✅ Филиал '{new_name}' добавлен!")
+                                st.rerun()
+                            else:
+                                st.error("❌ Ошибка при добавлении филиала")
+                        else:
+                            st.error("❌ Заполните обязательные поля (отмечены *)")
+        
+        with col_manage2:
+            # Удаление филиала
+            with st.expander("🗑️ Удалить филиал", expanded=False):
+                st.warning("⚠️ **Внимание!** Удаление филиала необратимо и удалит все связанные данные мониторинга.")
+                
+                # Выпадающий список филиалов для удаления
+                filial_options = [(row['id'], f"{row['name']} ({row['region']})") for _, row in df.iterrows()]
+                
+                if filial_options:
+                    selected_filial = st.selectbox(
+                        "Выберите филиал для удаления:",
+                        options=[None] + filial_options,
+                        format_func=lambda x: "-- Выберите филиал --" if x is None else x[1]
+                    )
+                    
+                    if selected_filial:
+                        filial_id, filial_name = selected_filial
+                        
+                        # Подтверждение удаления
+                        confirm_text = st.text_input(
+                            f"Для подтверждения введите 'УДАЛИТЬ':",
+                            help="Это дополнительная защита от случайного удаления"
+                        )
+                        
+                        if st.button("🗑️ УДАЛИТЬ ФИЛИАЛ",
+                                   use_container_width=True,
+                                   type="secondary",
+                                   disabled=(confirm_text != "УДАЛИТЬ")):
+                            if self.delete_filial(filial_id):
+                                st.success(f"✅ Филиал '{filial_name}' удален!")
+                                st.rerun()
+                            else:
+                                st.error("❌ Ошибка при удалении филиала")
+                else:
+                    st.info("Нет филиалов для удаления")
+        
+        # Описание возможностей - перенесено в конец
+        st.markdown("---")
+        st.markdown("### 💡 Справка по использованию")
+        st.info("""
+        **Возможности таблицы:**
+        - **☑️ Выбор филиалов** - используйте чекбоксы слева для выбора филиалов для мониторинга
+        - **✏️ Редактирование всех полей** - двойной клик по любой ячейке (кроме ID)
+        - **📝 Редактируемые поля:**
+          - **Название** - название филиала
+          - **Округ** - выбор из списка федеральных округов
+          - **Регион** - регион расположения
+          - **Сайт** - URL сайта филиала (кликабельный)
+          - **Sitemap URL** - путь к sitemap
+        - **🔍 Фильтры** в каждой колонке (наведите на заголовок → меню)
+        - **📊 Сортировка** по клику на заголовок колонки
+        - **↔️ Изменение размера** колонок перетаскиванием границ
+        - **💾 Автосохранение** - все изменения сохраняются автоматически
+        
+        **Управление филиалами:**
+        - **➕ Добавить филиал** - форма для создания нового филиала
+        - **🗑️ Удалить филиал** - выберите филиал и подтвердите удаление
+        - **🗑️ Массовое удаление** - выберите несколько филиалов чекбоксами и удалите все сразу
+        
+        ⚡ **Для мониторинга:** выберите нужные филиалы чекбоксами и перейдите на вкладку "🔍 Мониторинг"
+        """)

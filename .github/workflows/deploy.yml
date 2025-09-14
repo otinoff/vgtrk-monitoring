@@ -56,6 +56,22 @@ jobs:
           echo "🔧 Checking and fixing database structure..."
           python3 check_and_fix_database.py
           
+          # Инициализируем базу данных если она пустая
+          echo "📊 Initializing database with filials data..."
+          python3 init_database.py || echo "Database already initialized or init script not found"
+          
+          # Экспортируем данные из существующей базы (если есть)
+          echo "📤 Exporting existing data..."
+          if [ -f "data/vgtrk_monitoring.db" ]; then
+            python3 export_import_data.py export data/vgtrk_monitoring.db data/vgtrk_monitoring_export.json || echo "Export failed, continuing..."
+          fi
+          
+          # Импортируем данные обратно (для сохранения существующих данных)
+          echo "📥 Importing data..."
+          if [ -f "data/vgtrk_monitoring_export.json" ]; then
+            python3 export_import_data.py import data/vgtrk_monitoring.db data/vgtrk_monitoring_export.json || echo "Import failed, continuing..."
+          fi
+          
           # Убиваем старый процесс streamlit
           echo "🔄 Restarting application..."
           pkill -f "streamlit run" || true

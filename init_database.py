@@ -94,15 +94,16 @@ def create_test_data(db: VGTRKDatabase):
     with db.get_connection() as conn:
         for filial in test_filials:
             conn.execute('''
-                INSERT OR REPLACE INTO filials 
-                (name, region, city, website, federal_district)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO filials
+                (name, region, city, website, federal_district, sitemap_url)
+                VALUES (?, ?, ?, ?, ?, ?)
             ''', (
                 filial['name'],
                 filial['region'],
                 filial['city'],
                 filial['website'],
-                filial['federal_district']
+                filial['federal_district'],
+                None  # sitemap_url по умолчанию None
             ))
         conn.commit()
     

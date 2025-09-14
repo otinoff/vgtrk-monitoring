@@ -48,6 +48,7 @@ class VGTRKDatabase:
                     website TEXT,
                     federal_district TEXT NOT NULL,
                     all_sites TEXT,
+                    sitemap_url TEXT,
                     is_active INTEGER DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -156,17 +157,18 @@ class VGTRKDatabase:
                 website = row.get('Сайт', row.get('website', ''))
                 district = row.get('Округ', row.get('federal_district', ''))
                 all_sites = row.get('Все_сайты', row.get('all_sites', ''))
+                sitemap_url = row.get('Sitemap_URL', row.get('sitemap_url', None))
                 
                 if name and district:  # Минимальные требования
                     records.append((
-                        name, region, city, website, district, all_sites
+                        name, region, city, website, district, all_sites, sitemap_url
                     ))
             
             # Вставляем записи
             conn.executemany('''
-                INSERT OR REPLACE INTO filials 
-                (name, region, city, website, federal_district, all_sites)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO filials
+                (name, region, city, website, federal_district, all_sites, sitemap_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', records)
             
             conn.commit()
@@ -247,7 +249,7 @@ class VGTRKDatabase:
         if not kwargs:
             return False
         
-        allowed_fields = ['name', 'region', 'city', 'website', 'federal_district', 'all_sites', 'is_active']
+        allowed_fields = ['name', 'region', 'city', 'website', 'federal_district', 'all_sites', 'is_active', 'sitemap_url']
         fields_to_update = {k: v for k, v in kwargs.items() if k in allowed_fields}
         
         if not fields_to_update:
