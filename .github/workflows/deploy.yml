@@ -52,6 +52,10 @@ jobs:
           # Создаем папку для данных если её нет
           mkdir -p data
           
+          # Проверяем и исправляем структуру базы данных
+          echo "🔧 Checking and fixing database structure..."
+          python3 check_and_fix_database.py
+          
           # Убиваем старый процесс streamlit
           echo "🔄 Restarting application..."
           pkill -f "streamlit run" || true
