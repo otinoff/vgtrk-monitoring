@@ -1,0 +1,84 @@
+name: 🚀 Auto Deploy to VPS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy to ai-search.onff.ru
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v3
+    
+    - name: 🚀 Deploy to VPS
+      uses: appleboy/ssh-action@v0.1.5
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USER }}
+        key: ${{ secrets.VPS_SSH_KEY }}
+        port: ${{ secrets.VPS_PORT }}
+        script: |
+          echo "🔄 Starting deployment..."
+          
+          # Переход в директорию проекта
+          if [ ! -d "/var/www/vgtrk-monitoring" ]; then
+            echo "📁 Creating project directory..."
+            mkdir -p /var/www/vgtrk-monitoring
+            cd /var/www/vgtrk-monitoring
+            git clone https://github.com/otinoff/vgtrk-monitoring.git .
+          else
+            cd /var/www/vgtrk-monitoring
+            echo "📥 Pulling latest changes..."
+            git stash
+            git pull origin main
+          fi
+          
+          # Создание виртуального окружения если его нет
+          if [ ! -d "venv" ]; then
+            echo "🐍 Creating virtual environment..."
+            python3 -m venv venv
+          fi
+          
+          # Установка/обновление зависимостей
+          echo "📦 Installing dependencies..."
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install streamlit pandas requests beautifulsoup4 lxml aiohttp streamlit-aggrid
+          
+          # Создаем папку для данных если её нет
+          mkdir -p data
+          
+          # Убиваем старый процесс streamlit
+          echo "🔄 Restarting application..."
+          pkill -f "streamlit run" || true
+          
+          # Небольшая пауза
+          sleep 2
+          
+          # Запускаем приложение в фоне
+          nohup streamlit run app_sqlite.py \
+            --server.port 8501 \
+            --server.address 0.0.0.0 \
+            --server.headless true \
+            > /var/www/vgtrk-monitoring/app.log 2>&1 &
+          
+          # Ждём запуска
+          echo "⏳ Waiting for app to start..."
+          sleep 5
+          
+          # Проверяем что процесс запустился
+          if pgrep -f "streamlit run" > /dev/null; then
+            echo "✅ Deployment completed successfully!"
+            echo "🌐 Application available at: http://ai-search.onff.ru"
+            echo "📊 Direct access: http://5.35.88.251:8501"
+            echo "📝 Check logs at: /var/www/vgtrk-monitoring/app.log"
+          else
+            echo "❌ Failed to start application"
+            echo "📋 Last 20 lines of log:"
+            tail -20 /var/www/vgtrk-monitoring/app.log
+            exit 1
+          fi
