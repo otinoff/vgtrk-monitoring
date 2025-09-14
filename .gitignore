@@ -1,0 +1,51 @@
+# Python
+*.pyc
+__pycache__/
+venv/
+env/
+.env
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+
+# Logs
+*.log
+logs/
+*.txt
+
+# Streamlit
+.streamlit/secrets.toml
+.streamlit/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+temp/
+tmp/
+*.tmp
+*.bak
+
+# Session files
+sessions/
+*.session
+
+# Config with sensitive data
+config.ini
+settings.ini
+
+# Output files
+output/
+results/
+*.csv
+*.xlsx

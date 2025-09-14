@@ -1,0 +1,14 @@
+[Unit]
+Description=Streamlit App for Site Parsing
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/parsing_vesti42
+ExecStart=/var/parsing_vesti42/start_app.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
