@@ -86,7 +86,7 @@ class FilialsTableEditor:
         """Универсальный метод для обновления любого поля филиала"""
         try:
             # Список разрешенных для редактирования полей (с маппингом для website_url -> website)
-            allowed_fields = ['name', 'federal_district', 'region', 'website_url', 'sitemap_url', 'is_active']
+            allowed_fields = ['name', 'federal_district', 'region', 'region_code', 'website_url', 'sitemap_url', 'is_active']
             
             if field not in allowed_fields:
                 st.error(f"Поле {field} не разрешено для редактирования")
@@ -130,11 +130,16 @@ class FilialsTableEditor:
             return False
     
     def add_filial(self, name: str, federal_district: str, region: str,
-                  website: str = "", sitemap_url: str = "") -> bool:
+                  website: str = "", sitemap_url: str = "", region_code: int = None) -> bool:
         """Добавление нового филиала"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
+            
+            # Если код региона не указан, генерируем случайный от 100 до 199
+            if region_code is None:
+                import random
+                region_code = random.randint(100, 199)
             
             cursor.execute("""
                 INSERT INTO filials (name, federal_district, region, website, sitemap_url, is_active, region_code)
@@ -142,7 +147,7 @@ class FilialsTableEditor:
             """, (name, federal_district, region,
                   website if website else None,
                   sitemap_url if sitemap_url else None,
-                  region[:3].upper()))  # Простой код региона из первых букв
+                  region_code))
             
             conn.commit()
             conn.close()
@@ -251,6 +256,15 @@ class FilialsTableEditor:
                           cellStyle={'backgroundColor': '#f8f9fa'},
                           cellEditor='agTextCellEditor')
         
+        # Автомобильный код региона
+        gb.configure_column("region_code",
+                          header_name="Код региона",
+                          width=100,
+                          editable=True,
+                          cellStyle={'backgroundColor': '#e8f4f8', 'textAlign': 'center', 'fontWeight': 'bold'},
+                          cellEditor='agNumberCellEditor',
+                          cellEditorParams={'min': 1, 'max': 999})
+        
         # Делаем сайт редактируемым
         gb.configure_column("website_url",
                           header_name="Сайт",
@@ -296,7 +310,6 @@ class FilialsTableEditor:
         
         # Скрываем технические колонки
         gb.configure_column("is_active", hide=True)
-        gb.configure_column("region_code", hide=True)
         
         # Общие настройки грида
         gb.configure_default_column(
@@ -408,7 +421,7 @@ class FilialsTableEditor:
                     updated_fields = []
                     
                     # Проверяем каждое поле на изменения
-                    fields_to_check = ['name', 'federal_district', 'region', 'website_url', 'sitemap_url']
+                    fields_to_check = ['name', 'federal_district', 'region', 'region_code', 'website_url', 'sitemap_url']
                     
                     for field in fields_to_check:
                         if str(original[field]) != str(row[field]):
@@ -418,6 +431,7 @@ class FilialsTableEditor:
                                     'name': 'Название',
                                     'federal_district': 'Округ',
                                     'region': 'Регион',
+                                    'region_code': 'Код региона',
                                     'website_url': 'Сайт',
                                     'sitemap_url': 'Sitemap URL'
                                 }.get(field, field)
@@ -516,6 +530,8 @@ class FilialsTableEditor:
         
         # Кнопки действий
         st.markdown("### 🛠️ Действия")
+        
+        # Первый ряд - основные действия
         col_action1, col_action2, col_action3, col_action4 = st.columns(4)
         
         with col_action1:
@@ -549,6 +565,85 @@ class FilialsTableEditor:
             if selected_theme != 'streamlit':
                 st.info(f"Тема изменится при следующем обновлении таблицы")
         
+        # Второй ряд - управление строками таблицы
+        st.markdown("#### 📝 Управление строками")
+        col_row1, col_row2, col_row3, col_row4 = st.columns(4)
+        
+        with col_row1:
+            if st.button("➕ Добавить строку", use_container_width=True, key="add_row_btn", help="Добавить новую пустую строку в конец таблицы"):
+                # Добавляем пустую строку с значениями по умолчанию
+                import random
+                random_code = random.randint(100, 199)
+                if self.add_filial("ГТРК \"Новый\"", "ЦФО", "Новый регион", "", "", random_code):
+                    st.success("✅ Добавлена новая строка! Отредактируйте данные в таблице")
+                    st.rerun()
+                else:
+                    st.error("❌ Ошибка при добавлении строки")
+        
+        with col_row2:
+            # Удаление выбранных строк
+            if st.session_state.get('selected_filials'):
+                if st.button(f"🗑️ Удалить выбранные ({len(st.session_state.selected_filials)})",
+                           use_container_width=True, key="delete_selected_rows_btn",
+                           help="Удалить все выбранные строки"):
+                    selected_ids = [filial['id'] for filial in st.session_state.selected_filials]
+                    selected_names = [filial['name'] for filial in st.session_state.selected_filials]
+                    
+                    # Показываем диалог подтверждения
+                    st.session_state.show_delete_confirmation = True
+                    st.session_state.filials_to_delete = selected_ids
+                    st.session_state.filials_names_to_delete = selected_names
+            else:
+                st.button("🗑️ Удалить выбранные (0)", use_container_width=True, disabled=True,
+                         help="Сначала выберите строки в таблице с помощью чекбоксов")
+        
+        with col_row3:
+            if st.button("📋 Дублировать выбранные", use_container_width=True, key="duplicate_rows_btn",
+                        help="Создать копии выбранных филиалов"):
+                if st.session_state.get('selected_filials'):
+                    duplicated_count = 0
+                    for filial in st.session_state.selected_filials:
+                        new_name = f"{filial.get('name', 'Копия')} (копия)"
+                        region_code = filial.get('region_code')
+                        if self.add_filial(new_name,
+                                          filial.get('federal_district', 'ЦФО'),
+                                          filial.get('region', 'Регион'),
+                                          filial.get('website_url', ''),
+                                          filial.get('sitemap_url', ''),
+                                          region_code):
+                            duplicated_count += 1
+                    
+                    if duplicated_count > 0:
+                        st.success(f"✅ Создано {duplicated_count} копий!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Ошибка при создании копий")
+                else:
+                    st.info("💡 Выберите филиалы для дублирования")
+        
+        with col_row4:
+            if st.button("🔢 Пронумеровать", use_container_width=True, key="renumber_btn",
+                        help="Добавить номера к выбранным филиалам"):
+                if st.session_state.get('selected_filials'):
+                    updated_count = 0
+                    for i, filial in enumerate(st.session_state.selected_filials, 1):
+                        current_name = filial.get('name', '')
+                        # Убираем старую нумерацию если есть
+                        import re
+                        clean_name = re.sub(r'^\d+\.\s*', '', current_name)
+                        new_name = f"{i}. {clean_name}"
+                        
+                        if self.update_filial_field(filial['id'], 'name', new_name):
+                            updated_count += 1
+                    
+                    if updated_count > 0:
+                        st.success(f"✅ Пронумеровано {updated_count} филиалов!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Ошибка при нумерации")
+                else:
+                    st.info("💡 Выберите филиалы для нумерации")
+        
         # Второй ряд - управление филиалами
         st.markdown("#### ➕➖ Управление филиалами")
         col_manage1, col_manage2 = st.columns(2)
@@ -557,20 +652,27 @@ class FilialsTableEditor:
             # Добавление филиала
             with st.expander("➕ Добавить филиал", expanded=False):
                 with st.form("add_filial_form"):
-                    new_name = st.text_input("Название филиала*", placeholder="ГТРК \"Название\"")
+                    col1, col2 = st.columns(2)
                     
-                    districts = ['ЦФО', 'СЗФО', 'ЮФО', 'СКФО', 'ПФО', 'УФО', 'СФО', 'ДФО']
-                    new_district = st.selectbox("Федеральный округ*", districts)
+                    with col1:
+                        new_name = st.text_input("Название филиала*", placeholder="ГТРК \"Название\"")
+                        
+                        districts = ['ЦФО', 'СЗФО', 'ЮФО', 'СКФО', 'ПФО', 'УФО', 'СФО', 'ДФО']
+                        new_district = st.selectbox("Федеральный округ*", districts)
+                        
+                        new_region = st.text_input("Регион*", placeholder="Название региона")
                     
-                    new_region = st.text_input("Регион*", placeholder="Название региона")
-                    new_website = st.text_input("Сайт", placeholder="example.ru (без http://)")
-                    new_sitemap = st.text_input("Sitemap URL", placeholder="/sitemap.xml")
+                    with col2:
+                        new_website = st.text_input("Сайт", placeholder="example.ru (без http://)")
+                        new_sitemap = st.text_input("Sitemap URL", placeholder="/sitemap.xml")
+                        new_region_code = st.number_input("Код региона", min_value=1, max_value=999, value=None,
+                                                        help="Автомобильный номер региона (77, 78, 199 и т.д.)")
                     
                     submitted = st.form_submit_button("➕ Добавить филиал", use_container_width=True)
                     
                     if submitted:
                         if new_name and new_district and new_region:
-                            if self.add_filial(new_name, new_district, new_region, new_website, new_sitemap):
+                            if self.add_filial(new_name, new_district, new_region, new_website, new_sitemap, new_region_code):
                                 st.success(f"✅ Филиал '{new_name}' добавлен!")
                                 st.rerun()
                             else:
@@ -625,6 +727,7 @@ class FilialsTableEditor:
           - **Название** - название филиала
           - **Округ** - выбор из списка федеральных округов
           - **Регион** - регион расположения
+          - **Код региона** - автомобильный номер региона (77, 78, 199 и т.д.)
           - **Сайт** - URL сайта филиала (кликабельный)
           - **Sitemap URL** - путь к sitemap
         - **🔍 Фильтры** в каждой колонке (наведите на заголовок → меню)
@@ -632,10 +735,15 @@ class FilialsTableEditor:
         - **↔️ Изменение размера** колонок перетаскиванием границ
         - **💾 Автосохранение** - все изменения сохраняются автоматически
         
-        **Управление филиалами:**
-        - **➕ Добавить филиал** - форма для создания нового филиала
-        - **🗑️ Удалить филиал** - выберите филиал и подтвердите удаление
-        - **🗑️ Массовое удаление** - выберите несколько филиалов чекбоксами и удалите все сразу
+        **Управление строками:**
+        - **➕ Добавить строку** - добавить новую пустую строку для редактирования
+        - **🗑️ Удалить выбранные** - удалить все выбранные чекбоксами строки
+        - **📋 Дублировать выбранные** - создать копии выбранных филиалов
+        - **🔢 Пронумеровать** - добавить номера к названиям выбранных филиалов
+        
+        **Детальное управление филиалами:**
+        - **➕ Добавить филиал** - детальная форма для создания нового филиала
+        - **🗑️ Удалить филиал** - выберите конкретный филиал и подтвердите удаление
         
         ⚡ **Для мониторинга:** выберите нужные филиалы чекбоксами и перейдите на вкладку "🔍 Мониторинг"
         """)
