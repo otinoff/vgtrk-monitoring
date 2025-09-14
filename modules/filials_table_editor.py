@@ -27,12 +27,12 @@ class FilialsTableEditor:
         
         # Базовый SQL запрос
         query = """
-            SELECT 
+            SELECT
                 id,
                 name,
                 federal_district,
                 region,
-                website_url,
+                website as website_url,
                 sitemap_url,
                 is_active,
                 region_code
@@ -85,18 +85,21 @@ class FilialsTableEditor:
     def update_filial_field(self, filial_id: int, field: str, new_value: Any) -> bool:
         """Универсальный метод для обновления любого поля филиала"""
         try:
-            # Список разрешенных для редактирования полей
+            # Список разрешенных для редактирования полей (с маппингом для website_url -> website)
             allowed_fields = ['name', 'federal_district', 'region', 'website_url', 'sitemap_url', 'is_active']
             
             if field not in allowed_fields:
                 st.error(f"Поле {field} не разрешено для редактирования")
                 return False
             
+            # Маппинг полей - если приходит website_url, меняем на website для БД
+            db_field = 'website' if field == 'website_url' else field
+            
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             
             # Безопасное обновление с использованием параметризованного запроса
-            query = f"UPDATE filials SET {field} = ? WHERE id = ?"
+            query = f"UPDATE filials SET {db_field} = ? WHERE id = ?"
             cursor.execute(query, (new_value if new_value else None, filial_id))
             
             conn.commit()
