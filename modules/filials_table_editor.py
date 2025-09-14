@@ -298,15 +298,18 @@ class FilialsTableEditor:
         gb.configure_column("Статус",
                           header_name="Активен",
                           width=80,
+                          editable=True,
                           cellStyle=JsCode("""
                               function(params) {
                                   if (params.value === '✅') {
-                                      return {'color': 'green', 'textAlign': 'center'};
+                                      return {'color': 'green', 'textAlign': 'center', 'backgroundColor': '#f0f8f0'};
                                   } else {
-                                      return {'color': 'gray', 'textAlign': 'center'};
+                                      return {'color': 'gray', 'textAlign': 'center', 'backgroundColor': '#f8f8f8'};
                                   }
                               }
-                          """))
+                          """),
+                          cellEditor='agSelectCellEditor',
+                          cellEditorParams={'values': ['✅', '❌']})
         
         # Скрываем технические колонки
         gb.configure_column("is_active", hide=True)
@@ -421,21 +424,31 @@ class FilialsTableEditor:
                     updated_fields = []
                     
                     # Проверяем каждое поле на изменения
-                    fields_to_check = ['name', 'federal_district', 'region', 'region_code', 'website_url', 'sitemap_url']
+                    fields_to_check = ['name', 'federal_district', 'region', 'region_code', 'website_url', 'sitemap_url', 'Статус']
                     
                     for field in fields_to_check:
-                        if str(original[field]) != str(row[field]):
-                            if self.update_filial_field(row['id'], field, row[field]):
-                                updated = True
-                                field_name_ru = {
-                                    'name': 'Название',
-                                    'federal_district': 'Округ',
-                                    'region': 'Регион',
-                                    'region_code': 'Код региона',
-                                    'website_url': 'Сайт',
-                                    'sitemap_url': 'Sitemap URL'
-                                }.get(field, field)
-                                updated_fields.append(field_name_ru)
+                        if field == 'Статус':
+                            # Специальная обработка для статуса
+                            original_status = '✅' if original['is_active'] else '❌'
+                            if original_status != row['Статус']:
+                                # Преобразуем ✅/❌ в 1/0 для базы данных
+                                new_status_value = 1 if row['Статус'] == '✅' else 0
+                                if self.update_filial_field(row['id'], 'is_active', new_status_value):
+                                    updated = True
+                                    updated_fields.append('Статус')
+                        else:
+                            if str(original[field]) != str(row[field]):
+                                if self.update_filial_field(row['id'], field, row[field]):
+                                    updated = True
+                                    field_name_ru = {
+                                        'name': 'Название',
+                                        'federal_district': 'Округ',
+                                        'region': 'Регион',
+                                        'region_code': 'Код региона',
+                                        'website_url': 'Сайт',
+                                        'sitemap_url': 'Sitemap URL'
+                                    }.get(field, field)
+                                    updated_fields.append(field_name_ru)
                     
                     # Если были изменения, показываем уведомление
                     if updated:
@@ -730,6 +743,7 @@ class FilialsTableEditor:
           - **Код региона** - автомобильный номер региона (77, 78, 199 и т.д.)
           - **Сайт** - URL сайта филиала (кликабельный)
           - **Sitemap URL** - путь к sitemap
+          - **Активен** - статус активности филиала (✅/❌)
         - **🔍 Фильтры** в каждой колонке (наведите на заголовок → меню)
         - **📊 Сортировка** по клику на заголовок колонки
         - **↔️ Изменение размера** колонок перетаскиванием границ
