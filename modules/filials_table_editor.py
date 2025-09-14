@@ -454,11 +454,10 @@ class FilialsTableEditor:
                     if updated:
                         fields_str = ', '.join(updated_fields)
                         st.success(f"✅ Обновлены поля ({fields_str}) для {row['name']}")
-                        st.balloons()
-                        # Делаем паузу и перезагружаем
-                        import time
-                        time.sleep(1)
-                        st.rerun()
+                        # Показываем воздушные шары только для первого изменения в сессии
+                        if not st.session_state.get('balloons_shown', False):
+                            st.balloons()
+                            st.session_state.balloons_shown = True
             
         # Показываем кнопку перехода к мониторингу если есть выбранные филиалы
         if st.session_state.get('selected_filials'):
